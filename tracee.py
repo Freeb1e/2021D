@@ -22,7 +22,7 @@ while True:
 
     # 计算两帧的差异
     diff = cv2.absdiff(gray1, gray2)
-
+    cv2.imshow('Frame Difference', diff)
     # 二值化以突出差异
     _, thresh = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)
     thresh = cv2.dilate(thresh, rectangle_kernel, iterations=2)  # 膨胀操作，使轮廓更清晰
@@ -35,6 +35,16 @@ while True:
         largest_contour = max(contours, key=cv2.contourArea)
         x, y, w, h = cv2.boundingRect(largest_contour)
         cv2.rectangle(frame2, (x, y), (x + w, y + h), (0, 255, 0), 2)  # 用绿色矩形框出
+
+        # 计算最大轮廓的中心坐标
+        M = cv2.moments(largest_contour)
+        if M["m00"] != 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+            # 在中心画一个红点
+            cv2.circle(frame2, (cx, cy), 5, (0, 0, 255), -1)
+            # 可选：打印中心坐标
+            # print(f"中心坐标: ({cx}, {cy})")
 
     # 显示结果
     thresh_img = cv2.merge([thresh, thresh, thresh])
