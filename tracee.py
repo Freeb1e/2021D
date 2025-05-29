@@ -1,7 +1,7 @@
 import cv2
 
 # # 初始化摄像头
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 # 读取视频
 #cap = cv2.VideoCapture('video.mp4')
 
@@ -11,7 +11,9 @@ gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
 
 # 定义矩形结构元素
 rectangle_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-
+count=0
+cxmax=0
+cxmin=1000
 while True:
     # 读取下一帧
     ret, frame2 = cap.read()
@@ -43,8 +45,18 @@ while True:
             cy = int(M["m01"] / M["m00"])
             # 在中心画一个红点
             cv2.circle(frame2, (cx, cy), 5, (0, 0, 255), -1)
+            count+=1
+            #print(count)
+            if(count<=100):
+                cxmax= cx if cx>cxmax else cxmax
+                cxmin= cx if cx<cxmin else cxmin
+            else: 
+                count=0
+                print("cxmax=",cxmax,"cxmin",cxmin,"cxmid",(cxmax+cxmin)/2)
+                cxmax=0
+                cxmin=1000
             # 可选：打印中心坐标
-            # print(f"中心坐标: ({cx}, {cy})")
+            #print(f"中心坐标: ({cx}, {cy})")
 
     # 显示结果
     thresh_img = cv2.merge([thresh, thresh, thresh])
