@@ -7,8 +7,9 @@ cap = cv2.VideoCapture(0)
 
 # 读取第一帧
 ret, frame1 = cap.read()
+frame1 = cv2.rotate(frame1, cv2.ROTATE_90_COUNTERCLOCKWISE)
 gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-
+show = True  # 是否显示处理过程
 # 定义矩形结构元素
 rectangle_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
 count=0
@@ -21,14 +22,18 @@ while True:
     ret, frame2 = cap.read()
     if not ret:
         break  # 如果视频结束，跳出循环
-
+    frame2 = cv2.rotate(frame2, cv2.ROTATE_90_COUNTERCLOCKWISE)
     gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
-
     # 计算两帧的差异
-    diff = cv2.absdiff(gray1, gray2)
-    cv2.imshow('Frame Difference', diff)
+    #diff = cv2.absdiff(gray1, gray2)
+    diff = (gray1.astype('int16') - gray2.astype('int16'))
+    diff[diff < 0] = 0
+    diff = diff.astype('uint8')
+    #diff[abs(diff)<10] = 0  # 将小于10的差异设为0
+    if show:
+        cv2.imshow('Frame Difference', diff)
     # 二值化以突出差异
-    _, thresh = cv2.threshold(diff, 50, 255, cv2.THRESH_BINARY)
+    _, thresh = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)
     thresh = cv2.erode(thresh, rectangle_kernel, iterations=1)
     thresh = cv2.dilate(thresh, rectangle_kernel, iterations=2)  # 膨胀操作，使轮廓更清晰
 
@@ -48,10 +53,11 @@ while True:
             cy = int(M["m01"] / M["m00"])
             # 在中心画一个红点
             cv2.circle(frame2, (cx, cy), 5, (0, 0, 255), -1)
-            count+=1           
+                       
             if count1==0:
                 print(count)
                 if(count<50):
+                    count+=1
                     cxmax= cx if cx>cxmax else cxmax
                     cxmin= cx if cx<cxmin else cxmin
                 else: 
@@ -72,7 +78,7 @@ while True:
                         start_time = time.perf_counter()
                     count1+=1
                     print("count1=", count1)
-                    if count1==11:
+                    if count1==12:
                         count1=0
                         end_time = time.perf_counter()
                         run_time = end_time - start_time
@@ -87,7 +93,8 @@ while True:
     # 压缩为原来的四分之一
     h, w = display_img.shape[:2]
     display_img_small = cv2.resize(display_img, (w // 2, h // 2))
-    cv2.imshow('Difference', display_img_small)
+    if(show):
+        cv2.imshow('Difference', display_img_small)
 
     # 准备下一次迭代
     gray1 = gray2
