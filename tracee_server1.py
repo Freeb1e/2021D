@@ -1,4 +1,4 @@
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify
 import cv2
 import threading
 import time
@@ -18,19 +18,9 @@ motion_data = {
 }
 data_lock = threading.Lock()
 
-# 控制摄像识别的全局变量
-camera_active = False  # 摄像识别状态
-valid_signal = False   # 客户端valid信号
-client_info = {
-    'client_id': 'unknown',
-    'last_signal_time': 0,
-    'signal_count': 0
-}
-control_lock = threading.Lock()
-
 def motion_detection_thread():
     """运动检测线程"""
-    global current_frame, motion_data, camera_active
+    global current_frame, motion_data
     
     # 初始化摄像头
     cap = cv2.VideoCapture(0)
@@ -56,34 +46,8 @@ def motion_detection_thread():
     cxpast = 0
     start_time = time.perf_counter()
     
-    print("运动检测线程已启动，等待valid信号...")
-    
     while True:
-        # 检查是否应该进行摄像识别
-        with control_lock:
-            should_process = camera_active and valid_signal
-        
-        if not should_process:
-            # 如果没有valid信号，只显示原始摄像头画面
-            ret, frame2 = cap.read()
-            if ret:
-                frame2 = cv2.rotate(frame2, cv2.ROTATE_90_COUNTERCLOCKWISE)
-                
-                # 添加等待信号的提示
-                cv2.putText(frame2, "等待客户端valid信号...", (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                cv2.putText(frame2, "SERVER 1 - 待机模式", (10, 70), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-                
-                # 更新当前帧
-                with frame_lock:
-                    _, buffer = cv2.imencode('.jpg', frame2)
-                    current_frame = buffer.tobytes()
-            
-            time.sleep(0.1)  # 等待模式下降低帧率
-            continue
-        
-        # 进行正常的运动检测处理
+        # 读取下一帧
         ret, frame2 = cap.read()
         if not ret:
             break
@@ -168,17 +132,12 @@ def motion_detection_thread():
         # 压缩为原来的一半
         h, w = display_img.shape[:2]
         display_img_small = cv2.resize(display_img, (w // 2, h // 2))
-          # 添加数据信息到图像上
+        
+        # 添加数据信息到图像上
         with data_lock:
             info_text = f"L={motion_data['L']:.1f}, T={motion_data['T']:.2f}s"
             cv2.putText(display_img_small, info_text, (10, 30), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            
-        # 添加服务器状态信息
-        with control_lock:
-            status_text = f"SERVER 1 - {'运行中' if valid_signal else '待机'}"
-            cv2.putText(display_img_small, status_text, (10, 60), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0) if valid_signal else (0, 0, 255), 2)
         
         # 更新当前帧
         with frame_lock:
@@ -250,76 +209,7 @@ def video_feed():
 def get_motion_data():
     """HTTP GET获取运动检测数据（L和T变量）"""
     with data_lock:
-        response_data = motion_data.copy()
-    
-    with control_lock:
-        response_data['camera_active'] = camera_active
-        response_data['valid_signal'] = valid_signal
-        
-    return jsonify(response_data)
-
-@app.route('/control', methods=['POST'])
-def control_camera():
-    """接收客户端的控制信号"""
-    global camera_active, valid_signal, client_info
-    
-    try:
-        data = request.get_json()
-        if data is None:
-            return jsonify({'status': 'error', 'message': '无效的JSON数据'}), 400
-        
-        # 获取控制信号
-        new_valid = data.get('valid', False)
-        client_id = data.get('client_id', 'unknown')
-        
-        with control_lock:
-            # 更新控制状态
-            valid_signal = new_valid
-            camera_active = new_valid  # 根据valid信号控制摄像识别
-            
-            # 更新客户端信息
-            client_info['client_id'] = client_id
-            client_info['last_signal_time'] = time.time()
-            client_info['signal_count'] += 1
-        
-        status_msg = "摄像识别已启动" if new_valid else "摄像识别已停止"
-        print(f"收到客户端 {client_id} 的控制信号: valid={new_valid} - {status_msg}")
-        
-        return jsonify({
-            'status': 'success',
-            'message': status_msg,
-            'server_id': 1,
-            'camera_active': camera_active,
-            'timestamp': time.time()
-        })
-        
-    except Exception as e:
-        print(f"处理控制信号错误: {e}")
-        return jsonify({
-            'status': 'error', 
-            'message': str(e),
-            'server_id': 1
-        }), 500
-
-@app.route('/status')
-def get_status():
-    """获取服务器详细状态"""
-    with control_lock:
-        control_status = {
-            'camera_active': camera_active,
-            'valid_signal': valid_signal,
-            'client_info': client_info.copy()
-        }
-    
-    with data_lock:
-        motion_status = motion_data.copy()
-    
-    return jsonify({
-        'server_id': 1,
-        'control_status': control_status,
-        'motion_data': motion_status,
-        'timestamp': time.time()
-    })
+        return jsonify(motion_data)
 
 @app.route('/ping')
 def ping():

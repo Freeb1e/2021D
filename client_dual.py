@@ -5,6 +5,7 @@ from threading import Thread, Lock
 import time
 import json
 import uuid
+import math
 
 class DualServerClient:
     def __init__(self, server1_url, server2_url):
@@ -159,8 +160,8 @@ class DualServerClient:
         while not self.stopped:
             try:
                 response = requests.get(self.server2_data_url, timeout=5)
-                if response.status_code == 200:
-                    data = response.json()
+                if response.status_code == 200: #HTTP状态码200表示请求成功
+                    data = response.json()      #得到数据包
                     with self.data_lock:
                         self.server2_motion_data = data
                         self.server2_motion_data['timestamp'] = time.time()
@@ -274,6 +275,18 @@ class DualServerClient:
             data1 = self.server1_motion_data.copy()
             data2 = self.server2_motion_data.copy()
         
+        # 计算角度
+        L1 = data1.get('L', 0)
+        L2 = data2.get('L', 0)
+        angle = math.atan2(L2, L1) if L2 != 0 else 3.14159 / 2  # 如果L2为0，设置为90度
+        angle = math.degrees(angle)  # 转换为度数
+
+        # 计算摆长
+        T1 = data1.get('T', 0)
+        T2 = data2.get('T', 0)
+        T0 = (T1 + T2) / 2 
+        L0 = (T0 / 2 / 3.14159) ^ 2 * 9.8  # 假设重力加速度为9.8 m/s²
+
         # 创建占位图像
         placeholder = np.zeros((400, 400, 3), dtype=np.uint8)
         
@@ -283,15 +296,21 @@ class DualServerClient:
             frame1 = cv2.resize(frame1, (400, 400))
             # 添加服务器1标识
             cv2.putText(frame1, "SERVER 1", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            # 添加连接状态
-            status_color = (0, 255, 0) if self.server1_connected else (0, 0, 255)
-            cv2.putText(frame1, f"连接: {'正常' if self.server1_connected else '断开'}", 
-                       (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
+
+            # # 添加连接状态
+            # status_color = (0, 255, 0) if self.server1_connected else (0, 0, 255)
+            # cv2.putText(frame1, f"连接: {'正常' if self.server1_connected else '断开'}", 
+            #            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
+
             # 添加L、T数据
             cv2.putText(frame1, f"L: {data1.get('L', 0):.1f}", 
                        (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             cv2.putText(frame1, f"T: {data1.get('T', 0):.2f}s", 
                        (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.putText(frame1, f"θ: {angle:.2f}", 
+                       (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv2.putText(frame1, f"L0: {L0:.2f}", 
+                       (10, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
         else:
             frame1 = placeholder.copy()
             cv2.putText(frame1, "SERVER 1", (120, 180), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
@@ -303,10 +322,12 @@ class DualServerClient:
             frame2 = cv2.resize(frame2, (400, 400))
             # 添加服务器2标识
             cv2.putText(frame2, "SERVER 2", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-            # 添加连接状态
-            status_color = (0, 255, 0) if self.server2_connected else (0, 0, 255)
-            cv2.putText(frame2, f"连接: {'正常' if self.server2_connected else '断开'}", 
-                       (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
+
+            # # 添加连接状态
+            # status_color = (0, 255, 0) if self.server2_connected else (0, 0, 255)
+            # cv2.putText(frame2, f"连接: {'正常' if self.server2_connected else '断开'}", 
+            #            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
+            
             # 添加L、T数据
             cv2.putText(frame2, f"L: {data2.get('L', 0):.1f}", 
                        (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
@@ -320,14 +341,14 @@ class DualServerClient:
         # 水平拼接两个视频流
         combined_frame = cv2.hconcat([frame1, frame2])
         
-        # 添加整体信息
-        cv2.putText(combined_frame, f"双服务器运动检测客户端 - ID: {self.client_id}",                   (10, combined_frame.shape[0] - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        # # 添加整体信息
+        # cv2.putText(combined_frame, f"双服务器运动检测客户端 - ID: {self.client_id}",                   (10, combined_frame.shape[0] - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
         # 添加控制状态
-        control_text = f"摄像识别: {'运行中' if self.valid_signal else '已停止'}"
-        control_color = (0, 255, 0) if self.valid_signal else (0, 0, 255)
-        cv2.putText(combined_frame, control_text, 
-                   (10, combined_frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, control_color, 2)
+        # control_text = f"摄像识别: {'运行中' if self.valid_signal else '已停止'}"
+        # control_color = (0, 255, 0) if self.valid_signal else (0, 0, 255)
+        # cv2.putText(combined_frame, control_text, 
+        #            (10, combined_frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, control_color, 2)
         
         return combined_frame, data1, data2
 
@@ -439,9 +460,9 @@ def main():
                         cv2.putText(frame, "仅服务器2模式", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                         cv2.imshow('双服务器运动检测客户端', frame)
             
-            # 打印统计信息
-            if show_info:
-                client.print_stats()
+            # # 打印统计信息
+            # if show_info:
+            #     client.print_stats()
             
             # 按键处理
             key = cv2.waitKey(1) & 0xFF
